@@ -5,5 +5,10 @@ You can get the domain and resource ids from Linode's edit page for
 the DNS entry you want to modify. They're found in the URL for that
 page.
 
+You may use the domain zone and resource hostname instead of the
+domain and resource ID's, to have the program resolve them. Useful
+since it appears as though Linode no longer provides the domain ID
+in the URL.
+
 By default, this sets the resource's IP address to your public facing
 address. You can override that behavior with the --address option.
