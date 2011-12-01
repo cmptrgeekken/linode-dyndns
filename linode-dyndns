@@ -27,100 +27,124 @@ from optparse import OptionParser
 from xml.dom.minidom import parseString
 
 def get_parser():
-    parser = OptionParser()
-    parser.add_option("-a", "--address")
-    parser.add_option("-d", "--domain-id")
-    parser.add_option("-k", "--api-key")
-    parser.add_option("-r", "--resource-id")
-    return parser
+   parser = OptionParser()
+   parser.add_option("-a", "--address")
+   parser.add_option("-d", "--domain-id")
+   parser.add_option("-k", "--api-key")
+   parser.add_option("-r", "--resource-id")
+   return parser
 
 def parse_wddx_node(node):
-    wddxTypes = {
-        "array" : parse_wddx_array,
-        "number" : parse_wddx_number,
-        "string" : parse_wddx_string,
-        "struct" : parse_wddx_struct,
-        }
+   wddxTypes = {
+      "array" : parse_wddx_array,
+      "number" : parse_wddx_number,
+      "string" : parse_wddx_string,
+      "struct" : parse_wddx_struct,
+      }
 
-    type = node.nodeName
+   type = node.nodeName
 
-    if wddxTypes.has_key(type):
-        return wddxTypes[type](node)
+   if wddxTypes.has_key(type):
+      return wddxTypes[type](node)
 
 def parse_wddx_array(node):
-    return [ parse_wddx_node(child) for child in node.childNodes ]
+   return [ parse_wddx_node(child) for child in node.childNodes ]
 
 def parse_wddx_number(node):
-    val = node.firstChild.nodeValue
+   val = node.firstChild.nodeValue
 
-    if "." in val:
-        return float(val)
-    else:
-        return int(val)
+   if "." in val:
+      return float(val)
+   else:
+      return int(val)
 
 def parse_wddx_string(node):
-    if not node.hasChildNodes():
-        return ""
-    return node.firstChild.nodeValue
+   if not node.hasChildNodes():
+      return ""
+   return node.firstChild.nodeValue
 
 def parse_wddx_struct(node):
-    ret = {}
+   ret = {}
 
-    for child in node.childNodes:
-        name = child.getAttribute("name")
-        ret[name] = parse_wddx_node(child.firstChild)
+   for child in node.childNodes:
+      name = child.getAttribute("name")
+      ret[name] = parse_wddx_node(child.firstChild)
 
-    return ret
+   return ret
 
 def api_call(options, action, args=None):
-    base = "https://api.linode.com/api/"
+   base = "https://api.linode.com/api/"
 
-    query_args = {"api_action" : action,
-                  "api_key" : options.api_key,
-                  "api_responseFormat" : "wddx" }
-    if args is not None:
-        query_args.update(args)
+   query_args = {"api_action" : action,
+              "api_key" : options.api_key,
+              "api_responseFormat" : "wddx" }
+   if args is not None:
+      query_args.update(args)
 
-    url = "%s?%s" % (base, urllib.urlencode(query_args))
+   url = "%s?%s" % (base, urllib.urlencode(query_args))
 
-    response = urllib2.urlopen(url)
+   response = urllib2.urlopen(url)
 
-    xml = response.read()
-    dom = parseString(xml)
+   xml = response.read()
+   dom = parseString(xml)
 
-    data_elt = dom.getElementsByTagName("data")[0]
-    data = parse_wddx_struct(data_elt.firstChild)
+   data_elt = dom.getElementsByTagName("data")[0]
+   data = parse_wddx_struct(data_elt.firstChild)
 
-    errors = data.get("ERRORARRAY")
-    if errors and len(errors) > 0:
-        error = errors[0]
-        raise Exception(error.get("ERRORMESSAGE"), error.get("ERRORCODE"))
+   errors = data.get("ERRORARRAY")
+   if errors and len(errors) > 0:
+      error = errors[0]
+      raise Exception(error.get("ERRORMESSAGE"), error.get("ERRORCODE"))
 
-    return data.get("DATA")
-    
+   return data.get("DATA")
+   
 def getmyip():
-    url = "http://www.whatismyip.com/automation/n09230945.asp"
-    response = urllib2.urlopen(url)
-    return response.read().strip()
+   url = "http://automation.whatismyip.com/n09230945.asp"
+   response = urllib2.urlopen(url)
+   return response.read().strip()
 
 def main():
-    (options, args) = get_parser().parse_args()
+   (options, args) = get_parser().parse_args()
 
-    address = options.address
-    if not address:
-        address = "[remote_addr]"
+   address = options.address
+   domain_id = options.domain_id
+   resource_id = options.resource_id
 
-    api_call(options, "domain.resource.list",
-             { "DomainID" : options.domain_id,
-               "ResourceID" : options.resource_id })
+   if not address:
+      address = getmyip()
 
-    api_call(options, "domain.resource.update",
-             { "DomainID" : options.domain_id,
-               "ResourceID" : options.resource_id,
-               "Target" : address })
+   # Convert domain name to ID
+   if not domain_id.isdigit():
+      results = api_call(options,"domain.list")
+      for domain in results:
+         if domain.get("DOMAIN") == domain_id:
+            domain_id = domain.get("DOMAINID")
+            
+
+   # Convert resource name to ID
+   if not resource_id.isdigit():
+      results = api_call(options,"domain.resource.list",
+                   { "DomainID": domain_id })
+      for resource in results:
+         if resource.get("NAME") == resource_id:
+            resource_id = resource.get("RESOURCEID")
+            resource_ip = resource.get("TARGET")
+   else:
+      results = api_call(options,"domain.resource.list",
+                         { "DomainID": domain_id,
+                           "ResourceID": resource_id})
+      for resource in results:
+         if resource.get("RESOURCEID") == resource_id:
+            resource_ip = resource.get("TARGET")
+
+   if not resource_ip == address:
+      api_call(options, "domain.resource.update",
+               { "DomainID" : domain_id,
+                 "ResourceID" : resource_id,
+                 "Target" : address })
 
 if __name__ == "__main__":
-    try:
-        exit(main())
-    except KeyboardInterrupt:
-        exit(1)
+   try:
+      exit(main())
+   except KeyboardInterrupt:
+      exit(1)
